@@ -61,6 +61,10 @@ file 'app/stylesheets/screen.sass', <<-FILE
 +sticky-footer(40px, "#container", "#container_footer", "#footer")  
 FILE
 
+file 'app/stylesheets/application.sass', <<-FILE
+# Application specific styles
+FILE
+
 file 'app/views/layouts/sample_application.html.haml', <<-FILE
 !!!
 %html{ "xml:lang" => "en", :lang => "en", :xmlns => "http://www.w3.org/1999/xhtml" }
@@ -72,6 +76,7 @@ file 'app/views/layouts/sample_application.html.haml', <<-FILE
     = stylesheet_link_tag 'compiled/print.css', :media => 'print'
     /[if IE]
       = stylesheet_link_tag 'compiled/ie.css', :media => 'screen, projection'
+    = stylesheet_link_tag 'compiled/application.css', :media => 'screen, projection'
 
     = javascript_include_tag :defaults
   %body{body_attributes}
@@ -82,4 +87,23 @@ file 'app/views/layouts/sample_application.html.haml', <<-FILE
       #container_footer
     #footer
       footer
+FILE
+
+file 'app/helpers/sample_application_helper.rb', <<-FILE
+# Methods added to this helper will be available to all templates in the application.
+module ApplicationHelper
+
+  def body_attributes
+    {:class => body_class, :id => body_id}
+  end
+  
+  def body_class
+    @controller.controller_name.dasherize
+  end
+  
+  def body_id
+    @controller.controller_name.dasherize + '-' + @controller.action_name.dasherize
+  end  
+
+end
 FILE
