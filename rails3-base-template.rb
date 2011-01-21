@@ -1,10 +1,15 @@
 git :init
 git :add => "."
+git :rm => "config/database.yml --cached"
 git :commit => "-m 'Initial commit'"
 
 puts "Ignoring vim temp files"
-append_file ".gitignore", "*.swp"
+append_file ".gitignore", "*.swp\n"
 git :commit => "-am 'Ignore vim temporary files'"
+
+puts "Ignoring database config file"
+append_file ".gitignore", "config/database.yml\n"
+git :commit => "-am 'Ignore database config file'"
 
 puts "Installing test gems"
 gem "rspec", :group => :test
@@ -83,7 +88,7 @@ gsub_file "app/stylesheets/partials/_two_col.scss", /2 \* blueprint-grid-columns
 git :commit => "-am 'Adjusted sidebar to 1/6 and content to 5/6'"
 
 generate :model, "Subdomain name:string"
-rake "db:migrate"
+
 inject_into_class "app/models/subdomain.rb", "Subdomain", <<-SUBDOMAIN
   validates_presence_of :name
   validates_uniqueness_of :name, :case_sensitive => false

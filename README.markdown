@@ -14,4 +14,8 @@ does not work with prior Rails versions.
 
     cd test_app
 
+    rake db:create
+
+    rake db:migrate
+
     rake cucumber
