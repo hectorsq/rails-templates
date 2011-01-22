@@ -38,7 +38,26 @@ gem "compass"
 
 run "bundle install"
 
-run "compass init rails --using blueprint/semantic --sass-dir app/stylesheets --css-dir public/stylesheets/compiled"
+run "compass init rails --using blueprint/semantic --sass-dir app/stylesheets --css-dir tmp/stylesheets"
+
+create_file "config/initializers/stylesheets.rb", <<-STYLESHEETS
+# Adapted from
+# http://github.com/chriseppstein/compass/issues/issue/130
+# and other posts.
+
+# Create the dir
+require 'fileutils'
+FileUtils.mkdir_p(Rails.root.join("tmp", "stylesheets"))
+
+Sass::Plugin.on_updating_stylesheet do |template, css|
+  puts "Compiling \#{template} to \#{css}"
+end
+
+Rails.configuration.middleware.insert_before('Rack::Sendfile', 'Rack::Static',
+                                             :urls => ['/stylesheets'],
+                                             :root => "\#{Rails.root}/tmp")
+
+STYLESHEETS
 
 git :add => "."
 git :commit => "-am 'Installed haml and compass'"
@@ -54,11 +73,11 @@ create_file "app/views/layouts/application.html.haml", <<-APP_LAYOUT
     = stylesheet_link_tag :all
     = javascript_include_tag :defaults
     = csrf_meta_tag
-    = stylesheet_link_tag 'compiled/screen.css', :media => 'screen, projection'
-    = stylesheet_link_tag 'compiled/print.css', :media => 'print'
+    = stylesheet_link_tag 'screen.css', :media => 'screen, projection'
+    = stylesheet_link_tag 'print.css', :media => 'print'
     /[if lt IE 8]
-      = stylesheet_link_tag 'compiled/ie.css', :media => 'screen, projection'
-    = stylesheet_link_tag 'compiled/application.css', :media => 'screen, projection'
+      = stylesheet_link_tag 'ie.css', :media => 'screen, projection'
+    = stylesheet_link_tag 'application.css', :media => 'screen, projection'
   %body.bp.two-col
     #container
       #header
