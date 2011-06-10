@@ -15,13 +15,10 @@ puts "Installing test gems"
 gem "rspec", :group => :test
 gem "rspec-rails", :group => :test
 gem "cucumber", :group => :test
-gem "cucumber-rails", :group => :test
-gem "capybara", "0.3.9", :group => :test
-gem "rspec", :group => :development
-gem "rspec-rails", :group => :development
-gem "cucumber", :group => :development
-gem "cucumber-rails", :group => :development
-gem "capybara", "0.3.9", :group => :development
+gem "cucumber-rails", "0.5.2", :group => :test
+gem "capybara", "1.0.0.rc1", :group => :test
+gem "launchy", :group => :test
+gem "database_cleaner", :group => :test
 
 run "bundle install"
 
@@ -97,12 +94,12 @@ run "touch app/stylesheets/application.scss"
 
 git :commit => "-am 'Created application layout using compass'"
 
-gsub_file "app/stylesheets/partials/_two_col.scss", /third/, "sixth" 
-gsub_file "app/stylesheets/partials/_two_col.scss", /this is 8/, "this is 4" 
-gsub_file "app/stylesheets/partials/_two_col.scss", /Two sixths/, "Five sixths" 
-gsub_file "app/stylesheets/partials/_two_col.scss", /this is 16/, "this is 20" 
-gsub_file "app/stylesheets/partials/_two_col.scss", /blueprint-grid-columns \/ 3/, "blueprint-grid-columns / 6" 
-gsub_file "app/stylesheets/partials/_two_col.scss", /2 \* blueprint-grid-columns/, "5 * blueprint-grid-columns"
+gsub_file "app/stylesheets/partials/_two_col.scss", "third", "sixth"
+gsub_file "app/stylesheets/partials/_two_col.scss", "this is 8", "this is 4"
+gsub_file "app/stylesheets/partials/_two_col.scss", "Two sixths", "Five sixths"
+gsub_file "app/stylesheets/partials/_two_col.scss", "this is 16", "this is 20"
+gsub_file "app/stylesheets/partials/_two_col.scss", "blueprint-grid-columns / 3", "blueprint-grid-columns / 6"
+gsub_file "app/stylesheets/partials/_two_col.scss", "2 * $blueprint-grid-columns", "5 * $blueprint-grid-columns"
 
 git :commit => "-am 'Adjusted sidebar to 1/6 and content to 5/6'"
 
@@ -180,66 +177,170 @@ remove_file "public/index.html"
 
 git :commit => "-am 'Configure root page'"
 
-create_file "features/subdomains.feature", <<-SUBDOMAINS_FEATURE
-Feature:
+# Add devise for authentication
+puts "Installing devise"
+gem "devise"
+run "bundle install"
+run "rails generate devise:install"
+git :add => "."
+git :commit => "-am 'Installed devise'"
 
-  Scenario: Visit no subdomain
-    When I visit no subdomain
+run "rails generate devise User"
+run "rails generate migration AddSubdomainToUsers subdomain_id:integer"
+
+inject_into_file "app/models/subdomain.rb", :before => "end" do
+  "  has_many :users\n"
+end
+
+inject_into_file "app/models/user.rb", :before => "end" do
+<<-USER
+  belongs_to :subdomain
+  validates_presence_of :subdomain
+
+  def self.find_for_authentication(conditions={})
+    # Replace :subdomain with :subdomain_id in conditions hash
+    subdomain = Subdomain.find_by_name conditions[:subdomain]
+    conditions.delete(:subdomain)
+    conditions[:subdomain_id] = subdomain.id
+    super
+  end
+USER
+end
+
+inject_into_file "config/initializers/devise.rb", :after => "  # config.request_keys = []\n" do
+  "  config.request_keys = [:subdomain]\n"
+end
+
+inject_into_file "app/controllers/application_controller.rb", :after => "before_filter :current_subdomain\n" do
+  "  before_filter :authenticate_user!\n"
+end
+
+inject_into_file "features/support/paths.rb", :before => "    else" do
+<<-LOGIN
+      when /home/
+        '/'
+      when /login/
+        new_user_session_path
+LOGIN
+end
+
+git :add => "."
+git :commit => "-am 'Added subdomain to users'"
+
+
+create_file "features/support/custom_env.rb", <<-CUSTOM_ENV
+require 'cucumber/rails'
+
+# This fix applied as shown in https://github.com/aslakhellesoy/cucumber-rails/issues/97
+if RUBY_VERSION =~ /1.8/
+  require 'test/unit/testresult'
+  Test::Unit.run = true
+end
+
+class Capybara::Server
+  def self.my_subdomain=(value)
+    @@subdomain = value
+  end
+  def self.my_subdomain
+    @@subdomain || ""
+  end
+  def self.my_host
+    if my_subdomain == ""
+      "http://example.com"
+    else
+      "http://\#{my_subdomain}.example.com"
+    end
+  end
+end
+CUSTOM_ENV
+
+create_file "features/authentication.feature", <<-AUTHENTICATION_FEATURE
+Feature: Authorization
+  In order to use the system
+  As a subdomain member
+  I want to access the system
+
+  Background:
+    Given subdomain "a"
+    And subdomain "b"
+    And user "alpha" for subdomain "a"
+    And user "beta" for subdomain "b"
+
+  Scenario: Access forbidden to any page
+    When I visit subdomain "a"
     And I go to the home page
-    Then I should see "Home page"
+    Then I should see the login page
 
-  Scenario: Visit main subdomain
-    When I visit subdomain "www"
-    And I go to the home page
-    Then I should see "Home page"
+  Scenario: Allow access to users from this subdomain
+    When I visit subdomain "a"
+    And I login as user "alpha"
+    Then I should be allowed to enter
 
-  Scenario: Visit non existing subdomain
-    When I visit subdomain "s1"
-    And I go to the home page
-    Then I should see "Home page"
+  Scenario: Do not allow access to users from other subdomain
+    When I visit subdomain "a"
+    And I login as user "beta"
+    Then I should not be allowed to enter
+AUTHENTICATION_FEATURE
 
-  Scenario: Visit existing subdomain
-    Given subdomain "s1"
-    When I visit subdomain "s1"
-    And I go to the home page
-    Then I should see "Site page"
-    And I should see "Subdomain: s1"
-
-  Scenario: Visit several subdomains
-    Given subdomain "s1"
-    And subdomain "s2"
-    When I visit subdomain "s1"
-    And I go to the home page
-    Then I should see "Site page"
-    And I should see "Subdomain: s1"
-    # The following does not work because it seems that capybara
-    # cannot change the host on the fly
-    # When I visit subdomain "s2"
-    # And I go to the home page
-    # Then I should see "Site page"
-    # And I should see "Subdomain: s2"
-SUBDOMAINS_FEATURE
-
-create_file "features/step_definitions/subdomain_steps.rb", <<-SUBDOMAINS_STEPS
+create_file "features/step_definitions/authentication_steps.rb", <<-AUTHENTICATION_STEPS
 Given /^subdomain "([^"]*)"$/ do |sub|
   Subdomain.create(:name => sub)
 end
 
-# 
-# This is not the right way to test subdomains, furthermore it does not work with capybara > 0.3.9, please read
-# http://groups.google.com/group/ruby-capybara/browse_thread/thread/f6a109ec6d254bc8/9c39ccf587af9700?lnk=gst&q=subdomain#9c39ccf587af9700
-# However I have not figured yet another way to test subdomains, I am still investigating :(
-#
-When /^I visit no subdomain$/ do
-  Capybara.default_host = "example.com" #for Rack::Test
-  Capybara.app_host = "http://example.com:9887" if Capybara.current_driver == :culerity
+Given /^user "([^"]*)" for subdomain "([^"]*)"$/ do |user_name, subdomain_name|
+  subdomain = Subdomain.find_by_name(subdomain_name)
+  user = subdomain.users.new(:email => "\#{user_name}@example.com", :password => user_name*6, :password_conformation => user_name*6)
+  user.save
 end
 
-When /^I visit subdomain "([^"]*)"$/ do |sub|
-  Capybara.default_host = "\#{sub}.example.com" #for Rack::Test
-  Capybara.app_host = "http://\#{sub}.example.com:9887" if Capybara.current_driver == :culerity
+When /^I visit no subdomain$/ do
+  Capybara::Server.my_subdomain = ""
 end
-SUBDOMAINS_STEPS
+
+When /^I visit subdomain "([^"]*)"$/ do |subdomain|
+  Capybara::Server.my_subdomain = subdomain
+end
+
+When /^I visit a subdomain$/ do
+  subdomain = Subdomain.create(:name => 'testsubdomain')
+  Capybara::Server.my_subdomain = 'testsubdomain'
+end
+
+Then /^I should see the login page$/ do
+  within("div#content") do
+    assert has_content?("Email")
+    assert has_content?("Password")
+    assert has_content?("You need to sign in or sign up before continuing.")
+  end
+  # TODO We are not checking that this page is for subdomain X
+end
+
+When /^I login as user "([^"]*)"$/ do |user_name|
+  visit "\#{Capybara::Server.my_host}/\#{path_to('login')}"
+  within("div#content") do
+    fill_in 'Email',    :with => "\#{user_name}@example.com"
+    fill_in 'Password', :with => user_name * 6
+    click_button 'Sign in'
+  end
+end
+
+Then /^I should be allowed to enter$/ do
+  current_path = URI.parse(current_url).path
+  assert_equal path_to('home'), current_path
+  within("div#content") do
+    assert has_content?("Signed in successfully.")
+    assert has_content?(Capybara::Server.my_subdomain)
+  end
+end
+
+Then /^I should not be allowed to enter$/ do
+  current_path = URI.parse(current_url).path
+  assert_equal path_to('login'), current_path
+  within("div#content") do
+    assert has_content?("Invalid email or password.")
+  end
+end
+AUTHENTICATION_STEPS
 
 git :add => "."
 git :commit => "-am 'Created subdomain tests'"
