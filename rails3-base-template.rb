@@ -261,49 +261,52 @@ Feature: Authorization
   I want to access the system
 
   Background:
-    Given subdomain "a"
-    And subdomain "b"
-    And user "alpha" for subdomain "a"
-    And user "beta" for subdomain "b"
+    Given subdomain a
+    And subdomain b
+    And user alpha for subdomain a
+    And user beta for subdomain b
 
   Scenario: Access forbidden to any page
-    When I visit subdomain "a"
+    When I visit subdomain a
     And I go to the home page
     Then I should see the login page
 
   Scenario: Allow access to users from this subdomain
-    When I visit subdomain "a"
-    And I login as user "alpha"
+    When I visit subdomain a
+    And I login as user alpha
     Then I should be allowed to enter
 
   Scenario: Do not allow access to users from other subdomain
-    When I visit subdomain "a"
-    And I login as user "beta"
+    When I visit subdomain a
+    And I login as user beta
     Then I should not be allowed to enter
 AUTHENTICATION_FEATURE
 
 create_file "features/step_definitions/authentication_steps.rb", <<-AUTHENTICATION_STEPS
-Given /^subdomain "([^"]*)"$/ do |sub|
+Given /^subdomain (.+)$/ do |sub|
   Subdomain.create(:name => sub)
 end
 
-Given /^user "([^"]*)" for subdomain "([^"]*)"$/ do |user_name, subdomain_name|
+Given /^user (.+) for subdomain (.+)$/ do |user_name, subdomain_name|
   subdomain = Subdomain.find_by_name(subdomain_name)
-  user = subdomain.users.new(:email => "\#{user_name}@example.com", :password => user_name*6, :password_conformation => user_name*6)
+  user = subdomain.users.new(:email => "\#{user_name}@example.com", :password => user_name * 6, :password_conformation => user_name*6)
   user.save
 end
 
-When /^I visit no subdomain$/ do
-  Capybara::Server.my_subdomain = ""
+When /^I login as user (.+)$/ do |user_name|
+  When "I go to the login page"
+  within("div#content") do
+    fill_in 'Email',    :with => "\#{user_name}@example.com"
+    fill_in 'Password', :with => user_name * 6
+    click_button 'Sign in'
+  end
 end
 
-When /^I visit subdomain "([^"]*)"$/ do |subdomain|
-  Capybara::Server.my_subdomain = subdomain
-end
-
-When /^I visit a subdomain$/ do
-  subdomain = Subdomain.create(:name => 'testsubdomain')
-  Capybara::Server.my_subdomain = 'testsubdomain'
+Given /^I am a logged in user in a subdomain$/ do
+  Given "subdomain test"
+  And "user u for subdomain test"
+  When "I visit subdomain test"
+  And "I login as user u"
 end
 
 Then /^I should see the login page$/ do
@@ -313,15 +316,6 @@ Then /^I should see the login page$/ do
     assert has_content?("You need to sign in or sign up before continuing.")
   end
   # TODO We are not checking that this page is for subdomain X
-end
-
-When /^I login as user "([^"]*)"$/ do |user_name|
-  visit "\#{Capybara::Server.my_host}/\#{path_to('login')}"
-  within("div#content") do
-    fill_in 'Email',    :with => "\#{user_name}@example.com"
-    fill_in 'Password', :with => user_name * 6
-    click_button 'Sign in'
-  end
 end
 
 Then /^I should be allowed to enter$/ do
@@ -341,6 +335,27 @@ Then /^I should not be allowed to enter$/ do
   end
 end
 AUTHENTICATION_STEPS
+
+create_file "features/step_definitions/navigation_steps.rb", <<-NAVIGATION_STEPS
+When /^I visit no subdomain$/ do
+  Capybara::Server.my_subdomain = ""
+end
+
+When /^I visit subdomain (.+)$/ do |subdomain|
+  Capybara::Server.my_subdomain = subdomain
+end
+
+When /^I go to the (.+) page$/ do |page_name|
+  visit "\#{Capybara::Server.my_host}/\#{path_to(page_name)}"
+end
+
+Then /^show me the page$/ do
+  save_and_open_page
+end
+
+NAVIGATION_STEPS
+
+run "rm features/step_definitions/web_steps.rb"
 
 git :add => "."
 git :commit => "-am 'Created subdomain tests'"
