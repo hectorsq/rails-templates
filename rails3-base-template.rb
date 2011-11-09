@@ -15,8 +15,8 @@ puts "Installing test gems"
 gem "rspec", :group => :test
 gem "rspec-rails", :group => :test
 gem "cucumber", :group => :test
-gem "cucumber-rails", "0.5.2", :group => :test
-gem "capybara", "1.0.0.rc1", :group => :test
+gem "cucumber-rails", :group => :test
+gem "capybara", :group => :test
 gem "launchy", :group => :test
 gem "database_cleaner", :group => :test
 
@@ -215,18 +215,8 @@ inject_into_file "app/controllers/application_controller.rb", :after => "before_
   "  before_filter :authenticate_user!\n"
 end
 
-inject_into_file "features/support/paths.rb", :before => "    else" do
-<<-LOGIN
-      when /home/
-        '/'
-      when /login/
-        new_user_session_path
-LOGIN
-end
-
 git :add => "."
 git :commit => "-am 'Added subdomain to users'"
-
 
 create_file "features/support/custom_env.rb", <<-CUSTOM_ENV
 require 'cucumber/rails'
@@ -294,7 +284,7 @@ Given /^user (.+) for subdomain (.+)$/ do |user_name, subdomain_name|
 end
 
 When /^I login as user (.+)$/ do |user_name|
-  When "I go to the login page"
+  step "I go to the login page"
   within("div#content") do
     fill_in 'Email',    :with => "\#{user_name}@example.com"
     fill_in 'Password', :with => user_name * 6
@@ -320,7 +310,7 @@ end
 
 Then /^I should be allowed to enter$/ do
   current_path = URI.parse(current_url).path
-  assert_equal path_to('home'), current_path
+  assert_equal "/", current_path
   within("div#content") do
     assert has_content?("Signed in successfully.")
     assert has_content?(Capybara::Server.my_subdomain)
@@ -329,7 +319,7 @@ end
 
 Then /^I should not be allowed to enter$/ do
   current_path = URI.parse(current_url).path
-  assert_equal path_to('login'), current_path
+  assert_equal new_user_session_path, current_path
   within("div#content") do
     assert has_content?("Invalid email or password.")
   end
@@ -345,8 +335,12 @@ When /^I visit subdomain (.+)$/ do |subdomain|
   Capybara::Server.my_subdomain = subdomain
 end
 
-When /^I go to the (.+) page$/ do |page_name|
-  visit "\#{Capybara::Server.my_host}/\#{path_to(page_name)}"
+When /^I go to the home page$/ do
+  visit "\#{Capybara::Server.my_host}/"
+end
+
+When /^I go to the login page$/ do
+  visit "\#{Capybara::Server.my_host}\#{new_user_session_path}"
 end
 
 Then /^show me the page$/ do
