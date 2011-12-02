@@ -12,13 +12,20 @@ append_file ".gitignore", "config/database.yml\n"
 git :commit => "-am 'Ignore database config file'"
 
 puts "Installing test gems"
-gem "rspec", :group => :test
-gem "rspec-rails", :group => :test
-gem "cucumber", :group => :test
-gem "cucumber-rails", :group => :test
-gem "capybara", :group => :test
-gem "launchy", :group => :test
-gem "database_cleaner", :group => :test
+inject_into_file "Gemfile", :after => "gem 'pg'\n" do
+<<-TEST_GEMS
+
+group :development, :test do
+  gem 'rspec'
+  gem 'rspec-rails'
+  gem 'cucumber'
+  gem 'cucumber-rails'
+  gem 'capybara'
+  gem 'launchy'
+  gem 'database_cleaner'
+end
+TEST_GEMS
+end
 
 run "bundle install"
 
@@ -29,32 +36,15 @@ git :add => "."
 git :commit => "-am 'Installed test gems'"
 
 puts "Installing haml and compass"
-gem "haml"
-gem "haml-rails"
-gem "compass"
-
-run "bundle install"
-
-run "compass init rails --using blueprint/semantic --sass-dir app/stylesheets --css-dir tmp/stylesheets"
-
-create_file "config/initializers/stylesheets.rb", <<-STYLESHEETS
-# Adapted from
-# http://github.com/chriseppstein/compass/issues/issue/130
-# and other posts.
-
-# Create the dir
-require 'fileutils'
-FileUtils.mkdir_p(Rails.root.join("tmp", "stylesheets"))
-
-Sass::Plugin.on_updating_stylesheet do |template, css|
-  puts "Compiling \#{template} to \#{css}"
+inject_into_file "Gemfile", :after => "gem 'pg'\n" do
+<<-HAML_COMPASS_GEMS
+gem 'haml'
+gem 'haml-rails'
+gem 'compass', '0.12.alpha.2'
+HAML_COMPASS_GEMS
 end
 
-Rails.configuration.middleware.insert_before('Rack::Sendfile', 'Rack::Static',
-                                             :urls => ['/stylesheets'],
-                                             :root => "\#{Rails.root}/tmp")
-
-STYLESHEETS
+run "bundle install"
 
 git :add => "."
 git :commit => "-am 'Installed haml and compass'"
@@ -67,14 +57,9 @@ create_file "app/views/layouts/application.html.haml", <<-APP_LAYOUT
 %html
   %head
     %title BaseApp
-    = stylesheet_link_tag :all
-    = javascript_include_tag :defaults
+    = stylesheet_link_tag "application"
+    = javascript_include_tag "application"
     = csrf_meta_tag
-    = stylesheet_link_tag 'screen.css', :media => 'screen, projection'
-    = stylesheet_link_tag 'print.css', :media => 'print'
-    /[if lt IE 8]
-      = stylesheet_link_tag 'ie.css', :media => 'screen, projection'
-    = stylesheet_link_tag 'application.css', :media => 'screen, projection'
   %body.bp.two-col
     #container
       #header
@@ -90,18 +75,54 @@ create_file "app/views/layouts/application.html.haml", <<-APP_LAYOUT
         Footer
 APP_LAYOUT
 
-run "touch app/stylesheets/application.scss"
+create_file "app/assets/stylesheets/layout.css.scss", <<-LAYOUT_CSS
+@import "blueprint/reset";
+
+$blueprint-grid-columns: 24;
+$blueprint-container-size: 950px;
+$blueprint-grid-margin: 10px;
+
+$blueprint-grid-width: ($blueprint-container-size + $blueprint-grid-margin) / $blueprint-grid-columns - $blueprint-grid-margin;
+
+@import "blueprint";
+@import "blueprint/scaffolding";
+@import "blueprint/typography";
+@import "blueprint/utilities";
+@import "blueprint/debug";
+@import "blueprint/interaction";
+
+body.bp {
+  @include blueprint-typography(true);
+  @include blueprint-utilities;
+  @include blueprint-debug;
+  @include blueprint-interaction;
+  // Remove the scaffolding when you're ready to start doing visual design.
+  // Or leave it in if you're happy with how blueprint looks out-of-the-box
+  @include blueprint-scaffolding; }
+
+body.two-col {
+  #container {
+    @include container;
+  }
+  #header, #footer {
+    @include column($blueprint-grid-columns);
+  }
+  #sidebar {
+    // One sixth of the grid columns, rounding down. With 24 cols, this is 4.
+    $sidebar-columns: floor($blueprint-grid-columns / 6);
+    @include column($sidebar-columns);
+  }
+  #content {
+    // Five sixths of the grid columns, rounding up.
+    // With 24 cols, this is 20.
+    $content-columns: ceil(5 * $blueprint-grid-columns / 6);
+    // true means it's the last column in the row
+    @include column($content-columns, true);
+  }
+}
+LAYOUT_CSS
 
 git :commit => "-am 'Created application layout using compass'"
-
-gsub_file "app/stylesheets/partials/_two_col.scss", "third", "sixth"
-gsub_file "app/stylesheets/partials/_two_col.scss", "this is 8", "this is 4"
-gsub_file "app/stylesheets/partials/_two_col.scss", "Two sixths", "Five sixths"
-gsub_file "app/stylesheets/partials/_two_col.scss", "this is 16", "this is 20"
-gsub_file "app/stylesheets/partials/_two_col.scss", "blueprint-grid-columns / 3", "blueprint-grid-columns / 6"
-gsub_file "app/stylesheets/partials/_two_col.scss", "2 * $blueprint-grid-columns", "5 * $blueprint-grid-columns"
-
-git :commit => "-am 'Adjusted sidebar to 1/6 and content to 5/6'"
 
 generate :model, "Subdomain name:string"
 
@@ -179,7 +200,12 @@ git :commit => "-am 'Configure root page'"
 
 # Add devise for authentication
 puts "Installing devise"
-gem "devise"
+inject_into_file "Gemfile", :after => "gem 'compass', '0.12.alpha.2'\n" do
+<<-DEVISE_GEM
+gem 'devise'
+DEVISE_GEM
+end
+
 run "bundle install"
 run "rails generate devise:install"
 git :add => "."
@@ -279,7 +305,7 @@ end
 
 Given /^user (.+) for subdomain (.+)$/ do |user_name, subdomain_name|
   subdomain = Subdomain.find_by_name(subdomain_name)
-  user = subdomain.users.new(:email => "\#{user_name}@example.com", :password => user_name * 6, :password_conformation => user_name*6)
+  user = subdomain.users.new(:email => "\#{user_name}@example.com", :password => user_name * 6, :password_confirmation => user_name*6)
   user.save
 end
 
@@ -353,4 +379,3 @@ run "rm features/step_definitions/web_steps.rb"
 
 git :add => "."
 git :commit => "-am 'Created subdomain tests'"
-
