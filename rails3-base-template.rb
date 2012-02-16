@@ -5,14 +5,16 @@ git :commit => "-m 'Initial commit'"
 
 puts "Ignoring vim temp files"
 append_file ".gitignore", "*.swp\n"
+git :add => "."
 git :commit => "-am 'Ignore vim temporary files'"
 
 puts "Ignoring database config file"
 append_file ".gitignore", "config/database.yml\n"
+git :add => "."
 git :commit => "-am 'Ignore database config file'"
 
 puts "Installing test gems"
-inject_into_file "Gemfile", :after => "gem 'pg'\n" do
+inject_into_file "Gemfile", :after => "gem 'sqlite3'\n" do
 <<-TEST_GEMS
 
 group :development, :test do
@@ -33,39 +35,66 @@ generate "rspec:install"
 generate "cucumber:install --capybara"
 
 git :add => "."
-git :commit => "-am 'Installed test gems'"
+git :commit => "-am 'Install test gems'"
 
-puts "Installing haml and compass"
-inject_into_file "Gemfile", :after => "gem 'pg'\n" do
-<<-HAML_COMPASS_GEMS
+puts "Installing haml"
+inject_into_file "Gemfile", :after => "gem 'sqlite3'\n" do
+<<-HAML_GEMS
 gem 'haml'
 gem 'haml-rails'
-gem 'compass', '0.12.alpha.2'
-HAML_COMPASS_GEMS
+HAML_GEMS
 end
 
 run "bundle install"
 
 git :add => "."
-git :commit => "-am 'Installed haml and compass'"
+git :commit => "-am 'Install haml'"
+
+puts "Installing twitter bootstrap"
+inject_into_file "Gemfile", :after => "gem 'sass-rails',   '~> 3.2.3'\n" do
+<<-BOOTSTRAP_GEM
+  gem 'bootstrap-sass', '~>2.0.0'
+BOOTSTRAP_GEM
+end
+
+run "bundle install"
+
 git :add => "."
-git :commit => "-m 'Compass installed'"
+git :commit => "-am 'Install twitter bootstrap'"
+
+puts "Installing simple_form"
+inject_into_file "Gemfile", :after => "gem 'haml-rails'\n" do
+<<-SIMPLE_FORM
+gem "simple_form", '2.0.0.rc'
+SIMPLE_FORM
+end
+
+run "bundle install"
+
+run "rails generate simple_form:install --bootstrap"
+
+git :add => "."
+git :commit => "-am 'Install simple form'"
 
 remove_file "app/views/layouts/application.html.erb"
 create_file "app/views/layouts/application.html.haml", <<-APP_LAYOUT
 !!!
 %html
   %head
-    %title BaseApp
+    %title= content_for?(:title)? yield(:title) : "BaseApp"
     = stylesheet_link_tag "application"
     = javascript_include_tag "application"
     = csrf_meta_tag
-  %body.bp.two-col
-    #container
-      #header
-        Header
-      #sidebar
-        Sidebar
+  %body
+    #container.container
+      #navbar.navbar.navbar-fixed-top
+        .navbar-inner
+          .container
+            = link_to "BaseApp", '/', :class => "brand"
+            %ul.nav
+              %li= link_to("Option 1")
+              %li= link_to("Option 2")
+              %li= link_to("Option 3")
       #content
         Content
         = notice
@@ -75,54 +104,47 @@ create_file "app/views/layouts/application.html.haml", <<-APP_LAYOUT
         Footer
 APP_LAYOUT
 
+inject_into_file "app/helpers/application_helper.rb", :after => "module ApplicationHelper\n" do
+<<-APP_HELPER
+  def title(*parts)
+    unless parts.empty?
+      content_for :title do
+        (parts << "BaseApp").join(" - ")
+      end
+    end
+  end
+APP_HELPER
+end
+
 create_file "app/assets/stylesheets/layout.css.scss", <<-LAYOUT_CSS
-@import "blueprint/reset";
+@import "bootstrap";
 
-$blueprint-grid-columns: 24;
-$blueprint-container-size: 950px;
-$blueprint-grid-margin: 10px;
-
-$blueprint-grid-width: ($blueprint-container-size + $blueprint-grid-margin) / $blueprint-grid-columns - $blueprint-grid-margin;
-
-@import "blueprint";
-@import "blueprint/scaffolding";
-@import "blueprint/typography";
-@import "blueprint/utilities";
-@import "blueprint/debug";
-@import "blueprint/interaction";
-
-body.bp {
-  @include blueprint-typography(true);
-  @include blueprint-utilities;
-  @include blueprint-debug;
-  @include blueprint-interaction;
-  // Remove the scaffolding when you're ready to start doing visual design.
-  // Or leave it in if you're happy with how blueprint looks out-of-the-box
-  @include blueprint-scaffolding; }
-
-body.two-col {
-  #container {
-    @include container;
-  }
-  #header, #footer {
-    @include column($blueprint-grid-columns);
-  }
-  #sidebar {
-    // One sixth of the grid columns, rounding down. With 24 cols, this is 4.
-    $sidebar-columns: floor($blueprint-grid-columns / 6);
-    @include column($sidebar-columns);
-  }
-  #content {
-    // Five sixths of the grid columns, rounding up.
-    // With 24 cols, this is 20.
-    $content-columns: ceil(5 * $blueprint-grid-columns / 6);
-    // true means it's the last column in the row
-    @include column($content-columns, true);
-  }
+table {
+  @extend .table;
+  @extend .table-striped;
 }
+
+body {
+  padding-top: 40px;
+}
+
+form {
+  @extend .form-horizontal
+}
+
 LAYOUT_CSS
 
-git :commit => "-am 'Created application layout using compass'"
+git :add => "."
+git :commit => "-am 'Create application style'"
+
+inject_into_file "config/application.rb", :after => "config.assets.enabled = true\n" do
+<<-APP_CONFIG
+    config.assets.initialize_on_precompile = false
+APP_CONFIG
+end
+
+git :add => "."
+git :commit => "-am 'Config to run at heroku'"
 
 generate :model, "Subdomain name:string"
 
@@ -132,7 +154,7 @@ inject_into_class "app/models/subdomain.rb", "Subdomain", <<-SUBDOMAIN
 SUBDOMAIN
 
 git :add => "."
-git :commit => "-am 'Created subdomain model'"
+git :commit => "-am 'Create subdomain model'"
 
 inject_into_file "app/controllers/application_controller.rb", :after => "protect_from_forgery\n" do
 <<-CURR_SUB
@@ -140,17 +162,16 @@ inject_into_file "app/controllers/application_controller.rb", :after => "protect
   before_filter :current_subdomain
 
   def current_subdomain
-    if request.subdomains.first.present? && request.subdomains.first != "www"
-      current_subdomain = Subdomain.find_by_name(request.subdomains.first)
-    else
-      current_subdomain = nil
-    end
-    return current_subdomain
+    return nil if request.subdomain.present? == false
+    subdomain_name = request.subdomain.split('.').first
+    return nil if subdomain_name == "www"
+    return Subdomain.find_by_name subdomain_name
   end
 CURR_SUB
 end
 
-git :commit => "-am 'Implemented current subdomain helper'"
+git :add => "."
+git :commit => "-am 'Implement current subdomain helper'"
 
 gsub_file "config/application.rb", /# config.autoload_paths/, "config.autoload_paths"
 
@@ -167,15 +188,18 @@ end
 create_file "extras/subdomain_route.rb", <<-EXTRAS
 class SubdomainRoute
   def self.matches?(request)
+    # request.subdomain is virtus if host is virtus.mydomain.com
+    # request.subdomain is virtus.mydomain id host is virtus.mydomain.com.mx
     return false if request.subdomain.present? == false
-    return false if request.subdomain == "www"
-    Subdomain.exists?(:name => request.subdomain)
+    subdomain_name = request.subdomain.split('.').first
+    return false if subdomain_name == "www"
+    Subdomain.exists? subdomain_name
   end
 end
 EXTRAS
 
 git :add => "."
-git :commit => "-am 'Added subdomain routing constraints'"
+git :commit => "-am 'Add subdomain routing constraints'"
 
 generate :controller, "home"
 generate :controller, "sites"
@@ -190,17 +214,18 @@ create_file "app/views/sites/index.html.haml", <<-SITE_INDEX
 SITE_INDEX
 
 git :add => "."
-git :commit => "-am 'Created home and sites page'"
+git :commit => "-am 'Create home and sites page'"
 
-inject_into_file "config/routes.rb", "  root :to => 'home#index'\n\n", :after => "'sites#index'\n  end\n\n"
+inject_into_file "config/routes.rb", "  root :to => 'sites#index'\n\n", :after => "'sites#index'\n  end\n\n"
 
 remove_file "public/index.html"
 
+git :add => "."
 git :commit => "-am 'Configure root page'"
 
 # Add devise for authentication
 puts "Installing devise"
-inject_into_file "Gemfile", :after => "gem 'compass', '0.12.alpha.2'\n" do
+inject_into_file "Gemfile", :after => "gem 'haml-rails'\n" do
 <<-DEVISE_GEM
 gem 'devise'
 DEVISE_GEM
@@ -209,7 +234,7 @@ end
 run "bundle install"
 run "rails generate devise:install"
 git :add => "."
-git :commit => "-am 'Installed devise'"
+git :commit => "-am 'Install devise'"
 
 run "rails generate devise User"
 run "rails generate migration AddSubdomainToUsers subdomain_id:integer"
@@ -223,9 +248,17 @@ inject_into_file "app/models/user.rb", :before => "end" do
   belongs_to :subdomain
   validates_presence_of :subdomain
 
+  # Checks that the user belongs to the subdomain
+  # The conditions received are from devise.rb
+  # config.authentication_keys and config.request_keys
+  # and must match column names in user table
   def self.find_for_authentication(conditions={})
+    # conditions[:subdomain] is virtus if host is virtus.mydomain.com
+    # conditions[:subdomain] is virtus.mydomain id host is virtus.mydomain.com.mx
+    subdomain_name = conditions[:subdomain].split('.').first
+
     # Replace :subdomain with :subdomain_id in conditions hash
-    subdomain = Subdomain.find_by_name conditions[:subdomain]
+    subdomain = Subdomain.find_by_name subdomain_name
     conditions.delete(:subdomain)
     conditions[:subdomain_id] = subdomain.id
     super
@@ -242,7 +275,7 @@ inject_into_file "app/controllers/application_controller.rb", :after => "before_
 end
 
 git :add => "."
-git :commit => "-am 'Added subdomain to users'"
+git :commit => "-am 'Add subdomain to users'"
 
 create_file "features/support/custom_env.rb", <<-CUSTOM_ENV
 require 'cucumber/rails'
@@ -378,4 +411,4 @@ NAVIGATION_STEPS
 run "rm features/step_definitions/web_steps.rb"
 
 git :add => "."
-git :commit => "-am 'Created subdomain tests'"
+git :commit => "-am 'Create subdomain tests'"
